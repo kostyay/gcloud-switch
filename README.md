@@ -22,16 +22,18 @@ go install github.com/kostyay/gcloud-switch/cmd/gctx@latest
 ## Usage
 
 ```bash
-gctx            # fuzzy-pick a configuration to activate (with preview)
-gctx <name>     # activate <name>
-gctx -          # activate the previous configuration
-gctx -c         # print the active configuration
-gctx -h         # help
+gctx                    # fuzzy-pick a configuration to activate (with preview)
+gctx <name>             # activate <name>
+gctx -                  # activate the previous configuration
+gctx -c                 # print the active configuration
+gctx rename <old> <new> # rename a configuration
+gctx -h                 # help
 ```
 
-The no-arg picker shows a preview of each configuration's account, project, and
-region, and marks the currently active one. Switching is global — it changes
-gcloud's active configuration for every shell, exactly like
+The no-arg picker marks the currently active configuration, and flags any whose
+credentials need a re-login with `(login required)`. Each item's preview shows
+its account, project, region, and its `login_config_file` when set. Switching is
+global — it changes gcloud's active configuration for every shell, exactly like
 `gcloud config configurations activate`.
 
 ## Auth check
@@ -51,8 +53,8 @@ Re-login now? [y/N]
 The command uses the configuration's `[auth] login_config_file` when set. If
 that file is missing (for example, it was written to a temp path that has since
 been cleared), `gctx` reports the dangling path and shows the command to repoint
-the configuration instead of running a login that would fail. The check is
-best-effort: if an account has no stored credential, `gctx` stays quiet.
+the configuration instead of running a login that would fail. A configuration
+with no account set is never flagged — there is nothing to authenticate.
 
 ## Configuration
 
