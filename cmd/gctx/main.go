@@ -39,8 +39,33 @@ func app() *cli.Command {
 				Usage:   "print the active configuration and exit",
 			},
 		},
+		Commands: []*cli.Command{
+			{
+				Name:      "rename",
+				Usage:     "rename a configuration",
+				ArgsUsage: "<old> <new>",
+				Action:    renameAction,
+			},
+		},
 		Action: action,
 	}
+}
+
+func renameAction(_ context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
+	if args.Len() != 2 {
+		return fmt.Errorf("rename requires exactly two arguments: <old> <new>")
+	}
+	client, err := newClient()
+	if err != nil {
+		return err
+	}
+	oldName, newName := args.Get(0), args.Get(1)
+	if err := client.Rename(oldName, newName); err != nil {
+		return err
+	}
+	fmt.Printf("Renamed %q to %q.\n", oldName, newName)
+	return nil
 }
 
 func action(ctx context.Context, cmd *cli.Command) error {
@@ -132,9 +157,10 @@ func pick(ctx context.Context, client *gcloud.Client) error {
 		return nil
 	}
 
+	needsLogin := client.LoginRequired(ctx, configs)
 	idx, err := fuzzyfinder.Find(
 		configs,
-		func(i int) string { return itemLabel(configs[i], current) },
+		func(i int) string { return itemLabel(configs[i], current, needsLogin[i]) },
 		fuzzyfinder.WithPreviewWindow(func(i, _, _ int) string {
 			if i < 0 {
 				return ""
@@ -151,16 +177,24 @@ func pick(ctx context.Context, client *gcloud.Client) error {
 	return activate(ctx, client, configs[idx].Name)
 }
 
-func itemLabel(c gcloud.Config, current string) string {
+func itemLabel(c gcloud.Config, current string, needsLogin bool) string {
+	label := c.Name
 	if c.Name == current {
-		return c.Name + " (active)"
+		label += " (active)"
 	}
-	return c.Name
+	if needsLogin {
+		label += " (login required)"
+	}
+	return label
 }
 
 func preview(c gcloud.Config) string {
-	return fmt.Sprintf("configuration: %s\n\naccount: %s\nproject: %s\nregion:  %s",
+	s := fmt.Sprintf("configuration: %s\n\naccount: %s\nproject: %s\nregion:  %s",
 		c.Name, orDash(c.Account), orDash(c.Project), orDash(c.Region))
+	if c.LoginConfigFile != "" {
+		s += fmt.Sprintf("\nlogin config: %s", c.LoginConfigFile)
+	}
+	return s
 }
 
 func orDash(s string) string {

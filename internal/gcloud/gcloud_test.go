@@ -191,6 +191,61 @@ func TestSwitchUnknownConfig(t *testing.T) {
 	}
 }
 
+func TestRename(t *testing.T) {
+	c := newTestClient(t)
+	seedConfig(t, c, "dev", "a@x.com", "p-dev", "us-east1")
+	seedConfig(t, c, "prod", "a@x.com", "p-prod", "us-central1")
+	setActive(t, c, "dev")
+	if err := c.savePrevious("prod"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.Rename("dev", "staging"); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+
+	if _, err := os.Stat(c.configPath("dev")); !os.IsNotExist(err) {
+		t.Fatalf("old config still exists: %v", err)
+	}
+	if _, err := os.Stat(c.configPath("staging")); err != nil {
+		t.Fatalf("new config missing: %v", err)
+	}
+	if cur, _ := c.Current(); cur != "staging" {
+		t.Fatalf("active = %q, want staging", cur)
+	}
+
+	// Renaming prod updates the recorded previous pointer.
+	if err := c.Rename("prod", "production"); err != nil {
+		t.Fatalf("Rename prod: %v", err)
+	}
+	if prev, _ := c.Previous(); prev != "production" {
+		t.Fatalf("previous = %q, want production", prev)
+	}
+}
+
+func TestRenameErrors(t *testing.T) {
+	tests := []struct {
+		name           string
+		oldName, newTo string
+		wantErr        error
+	}{
+		{name: "old missing", oldName: "nope", newTo: "x", wantErr: ErrNotFound},
+		{name: "new exists", oldName: "dev", newTo: "prod", wantErr: ErrExists},
+		{name: "invalid name", oldName: "dev", newTo: "Bad Name", wantErr: ErrInvalidName},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newTestClient(t)
+			seedConfig(t, c, "dev", "a@x.com", "p-dev", "us-east1")
+			seedConfig(t, c, "prod", "a@x.com", "p-prod", "us-central1")
+
+			if err := c.Rename(tc.oldName, tc.newTo); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestPreviousMissing(t *testing.T) {
 	c := newTestClient(t)
 	if _, err := c.Previous(); !errors.Is(err, ErrNoPrevious) {

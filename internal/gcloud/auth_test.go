@@ -41,18 +41,36 @@ func TestCheckAuthNoCredentials(t *testing.T) {
 	tests := []struct {
 		name    string
 		account string
+		want    error
 	}{
-		{name: "empty account", account: ""},
-		{name: "missing credential file", account: "me@example.com"},
+		{name: "empty account", account: "", want: errNoAccount},
+		{name: "missing credential file", account: "me@example.com", want: errNoCredentials},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := New(t.TempDir(), "")
-			if err := c.checkAuth(t.Context(), tc.account); !errors.Is(err, errNoCredentials) {
-				t.Fatalf("err = %v, want errNoCredentials", err)
+			if err := c.checkAuth(t.Context(), tc.account); !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestLoginRequired(t *testing.T) {
+	c := New(t.TempDir(), "")
+	configs := []Config{
+		{Name: "no-account"},
+		{Name: "missing-creds", Account: "me@example.com"},
+	}
+
+	got := c.LoginRequired(t.Context(), configs)
+
+	if got[0] {
+		t.Fatal("config without account should not be flagged")
+	}
+	if !got[1] {
+		t.Fatal("config with missing credentials should be flagged")
 	}
 }
 

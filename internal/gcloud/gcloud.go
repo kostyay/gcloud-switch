@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -31,6 +32,16 @@ var ErrNotFound = errors.New("configuration not found")
 
 // ErrNoPrevious is returned when no previous configuration has been recorded.
 var ErrNoPrevious = errors.New("no previous configuration")
+
+// ErrExists is returned when renaming onto a configuration that already exists.
+var ErrExists = errors.New("configuration already exists")
+
+// ErrInvalidName is returned when a configuration name violates gcloud's naming
+// rule (a lowercase letter followed by lowercase letters, digits, or hyphens).
+var ErrInvalidName = errors.New("invalid configuration name")
+
+// validName matches gcloud's configuration naming rule.
+var validName = regexp.MustCompile(`^[a-z][-a-z0-9]*$`)
 
 // Config describes a single gcloud configuration.
 type Config struct {
@@ -147,6 +158,39 @@ func (c *Client) Switch(name string) error {
 		return fmt.Errorf("write active_config: %w", err)
 	}
 	return c.savePrevious(current)
+}
+
+// Rename renames a configuration, updating the active_config pointer and the
+// recorded previous configuration when they refer to the old name.
+func (c *Client) Rename(oldName, newName string) error {
+	if !validName.MatchString(newName) {
+		return fmt.Errorf("%q: %w", newName, ErrInvalidName)
+	}
+	if err := c.ensureExists(oldName); err != nil {
+		return err
+	}
+	if _, err := os.Stat(c.configPath(newName)); err == nil {
+		return fmt.Errorf("%q: %w", newName, ErrExists)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat config %q: %w", newName, err)
+	}
+	if err := os.Rename(c.configPath(oldName), c.configPath(newName)); err != nil {
+		return fmt.Errorf("rename config: %w", err)
+	}
+
+	current, err := c.Current()
+	if err != nil {
+		return err
+	}
+	if current == oldName {
+		if err := writeFileAtomic(c.activeConfigPath(), []byte(newName)); err != nil {
+			return fmt.Errorf("write active_config: %w", err)
+		}
+	}
+	if prev, err := c.Previous(); err == nil && prev == oldName {
+		return c.savePrevious(newName)
+	}
+	return nil
 }
 
 func (c *Client) ensureExists(name string) error {

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/auth/credentials"
@@ -27,6 +28,11 @@ var errNeedsReauth = errors.New("credentials expired, re-login required")
 // errNoCredentials signals that no stored credential exists for an account, so
 // its auth state cannot be verified.
 var errNoCredentials = errors.New("no stored credentials for account")
+
+// errNoAccount signals that a configuration has no account set, so there is
+// nothing to authenticate — distinct from an account whose credentials are
+// missing, and never a re-login state.
+var errNoAccount = errors.New("no account configured")
 
 // ReloginPlan describes how to re-authenticate a configuration whose
 // credentials have expired.
@@ -83,10 +89,38 @@ func (c *Client) VerifyAuth(ctx context.Context, name string) *ReloginPlan {
 	}
 	ctx, cancel := context.WithTimeout(ctx, authCheckTimeout)
 	defer cancel()
-	if err := c.checkAuth(ctx, cfg.Account); errors.Is(err, errNeedsReauth) {
+	if needsRelogin(c.checkAuth(ctx, cfg.Account)) {
 		return &ReloginPlan{Config: cfg}
 	}
 	return nil
+}
+
+// needsRelogin reports whether a checkAuth error means the account must log in
+// again: its stored credentials are missing or can no longer produce a token.
+func needsRelogin(err error) bool {
+	return errors.Is(err, errNeedsReauth) || errors.Is(err, errNoCredentials)
+}
+
+// LoginRequired reports, per configuration (by position), whether its stored
+// credentials are missing or can no longer produce an access token — i.e. a
+// re-login is needed. Configurations without an account are never flagged.
+// Checks perform live token refreshes and run concurrently, bounded by
+// authCheckTimeout.
+func (c *Client) LoginRequired(ctx context.Context, configs []Config) []bool {
+	ctx, cancel := context.WithTimeout(ctx, authCheckTimeout)
+	defer cancel()
+
+	result := make([]bool, len(configs))
+	var wg sync.WaitGroup
+	for i, cfg := range configs {
+		wg.Add(1)
+		go func(i int, account string) {
+			defer wg.Done()
+			result[i] = needsRelogin(c.checkAuth(ctx, account))
+		}(i, cfg.Account)
+	}
+	wg.Wait()
+	return result
 }
 
 // loginCommand builds the gcloud login command for a config, using its
@@ -115,7 +149,7 @@ func (c *Client) credentialPath(account string) string {
 // required, and errNoCredentials when the account has no stored credential.
 func (c *Client) checkAuth(ctx context.Context, account string) error {
 	if account == "" {
-		return errNoCredentials
+		return errNoAccount
 	}
 	data, err := os.ReadFile(c.credentialPath(account))
 	if err != nil {
