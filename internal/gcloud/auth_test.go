@@ -28,7 +28,7 @@ func TestCredentialPath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			c := New("/root", "")
+			c := New("/root", "", "")
 			got := c.credentialPath(tc.account)
 			if got != filepath.Join("/root", tc.want) {
 				t.Fatalf("got %q, want %q", got, filepath.Join("/root", tc.want))
@@ -49,7 +49,7 @@ func TestCheckAuthNoCredentials(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			c := New(t.TempDir(), "")
+			c := New(t.TempDir(), "", "")
 			if err := c.checkAuth(t.Context(), tc.account); !errors.Is(err, tc.want) {
 				t.Fatalf("err = %v, want %v", err, tc.want)
 			}
@@ -58,7 +58,7 @@ func TestCheckAuthNoCredentials(t *testing.T) {
 }
 
 func TestLoginRequired(t *testing.T) {
-	c := New(t.TempDir(), "")
+	c := New(t.TempDir(), "", "")
 	configs := []Config{
 		{Name: "no-account"},
 		{Name: "missing-creds", Account: "me@example.com"},
