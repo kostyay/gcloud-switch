@@ -1,6 +1,8 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 version: 2
 
+project_name: gctx
+
 env:
   - HOMEBREW_TAP_TOKEN={{ if index .Env "HOMEBREW_TAP_TOKEN" }}{{ .Env.HOMEBREW_TAP_TOKEN }}{{ else }}{{ .Env.GITHUB_TOKEN }}{{ end }}
 

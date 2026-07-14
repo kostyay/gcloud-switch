@@ -4,13 +4,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 // newTestClient returns a Client over a fresh gcloud root and state file.
 func newTestClient(t *testing.T) *Client {
 	t.Helper()
-	return New(t.TempDir(), filepath.Join(t.TempDir(), "previous"))
+	return New(t.TempDir(), filepath.Join(t.TempDir(), "previous"),
+		filepath.Join(t.TempDir(), "gke_gcloud_auth_plugin_cache"))
 }
 
 func seedConfig(t *testing.T, c *Client, name, account, project, region string) {
@@ -168,6 +170,35 @@ func TestSwitch(t *testing.T) {
 	}
 }
 
+func TestSwitchClearsKubeAuthCache(t *testing.T) {
+	c := newTestClient(t)
+	seedConfig(t, c, "dev", "a@x.com", "p-dev", "us-east1")
+	seedConfig(t, c, "prod", "a@x.com", "p-prod", "us-central1")
+	setActive(t, c, "dev")
+	if err := os.WriteFile(c.kubeCachePath, []byte("stale-token"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.Switch("prod"); err != nil {
+		t.Fatalf("Switch: %v", err)
+	}
+	if _, err := os.Stat(c.kubeCachePath); !os.IsNotExist(err) {
+		t.Fatalf("kube auth cache still present: %v", err)
+	}
+}
+
+func TestSwitchMissingKubeCacheIsOK(t *testing.T) {
+	c := newTestClient(t)
+	seedConfig(t, c, "dev", "a@x.com", "p-dev", "us-east1")
+	seedConfig(t, c, "prod", "a@x.com", "p-prod", "us-central1")
+	setActive(t, c, "dev")
+
+	// No cache file exists; Switch must not error.
+	if err := c.Switch("prod"); err != nil {
+		t.Fatalf("Switch: %v", err)
+	}
+}
+
 func TestSwitchToActiveIsNoop(t *testing.T) {
 	c := newTestClient(t)
 	seedConfig(t, c, "prod", "a@x.com", "p-prod", "us-central1")
@@ -243,6 +274,110 @@ func TestRenameErrors(t *testing.T) {
 				t.Fatalf("err = %v, want %v", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestSetLoginConfig(t *testing.T) {
+	c := newTestClient(t)
+	seedConfig(t, c, "trq", "principal://iam/locations/global/workforcePools/p/subject/me", "proj", "us-central1")
+	loginFile := filepath.Join(t.TempDir(), "login.json")
+	if err := os.WriteFile(loginFile, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.SetLoginConfig("trq", loginFile); err != nil {
+		t.Fatalf("SetLoginConfig: %v", err)
+	}
+
+	cfg, err := c.parseConfig("trq")
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.LoginConfigFile != loginFile {
+		t.Fatalf("LoginConfigFile = %q, want %q", cfg.LoginConfigFile, loginFile)
+	}
+	// Existing fields must survive the rewrite.
+	if cfg.Project != "proj" || cfg.Region != "us-central1" {
+		t.Fatalf("clobbered fields: %+v", cfg)
+	}
+	if cfg.NeedsLoginConfig() {
+		t.Fatal("NeedsLoginConfig true after setting login config")
+	}
+}
+
+func TestSetLoginConfigMissingFile(t *testing.T) {
+	c := newTestClient(t)
+	seedConfig(t, c, "trq", "a@x.com", "proj", "us-central1")
+
+	err := c.SetLoginConfig("trq", filepath.Join(t.TempDir(), "nope.json"))
+	if err == nil {
+		t.Fatal("expected error for missing login config file")
+	}
+}
+
+func TestSetLoginConfigUnknownConfig(t *testing.T) {
+	c := newTestClient(t)
+	if err := c.SetLoginConfig("nope", "/tmp/x"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestClearLoginConfig(t *testing.T) {
+	c := newTestClient(t)
+	if err := os.MkdirAll(c.configurationsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "[core]\naccount = me@x.com\n[auth]\nlogin_config_file = /tmp/login.json\n"
+	if err := os.WriteFile(c.configPath("trq"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.ClearLoginConfig("trq"); err != nil {
+		t.Fatalf("ClearLoginConfig: %v", err)
+	}
+	cfg, err := c.parseConfig("trq")
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.LoginConfigFile != "" {
+		t.Fatalf("LoginConfigFile = %q, want empty", cfg.LoginConfigFile)
+	}
+	if cfg.Account != "me@x.com" {
+		t.Fatalf("account clobbered: %q", cfg.Account)
+	}
+}
+
+func TestNeedsLoginConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		account string
+		login   string
+		want    bool
+	}{
+		{name: "workforce no login", account: "principal://x/workforcePools/p/subject/me", want: true},
+		{name: "workforce with login", account: "principal://x/workforcePools/p/subject/me", login: "/f.json"},
+		{name: "regular account", account: "me@x.com"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{Account: tc.account, LoginConfigFile: tc.login}
+			if got := cfg.NeedsLoginConfig(); got != tc.want {
+				t.Fatalf("NeedsLoginConfig = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoginConfigWarning(t *testing.T) {
+	c := newTestClient(t)
+	seedConfig(t, c, "trq", "principal://iam/workforcePools/p/subject/me", "proj", "us-central1")
+	if w := c.LoginConfigWarning("trq"); !strings.Contains(w, "gctx login-config trq") {
+		t.Fatalf("warning = %q, want fix hint", w)
+	}
+
+	seedConfig(t, c, "prod", "me@x.com", "proj", "us-central1")
+	if w := c.LoginConfigWarning("prod"); w != "" {
+		t.Fatalf("warning for regular account = %q, want empty", w)
 	}
 }
 

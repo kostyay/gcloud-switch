@@ -46,6 +46,18 @@ func app() *cli.Command {
 				ArgsUsage: "<old> <new>",
 				Action:    renameAction,
 			},
+			{
+				Name:      "login-config",
+				Usage:     "set or clear a configuration's workforce login config file",
+				ArgsUsage: "<configuration> <path>",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "clear",
+						Usage: "remove the login config file instead of setting it",
+					},
+				},
+				Action: loginConfigAction,
+			},
 		},
 		Action: action,
 	}
@@ -65,6 +77,33 @@ func renameAction(_ context.Context, cmd *cli.Command) error {
 		return err
 	}
 	fmt.Printf("Renamed %q to %q.\n", oldName, newName)
+	return nil
+}
+
+func loginConfigAction(_ context.Context, cmd *cli.Command) error {
+	client, err := newClient()
+	if err != nil {
+		return err
+	}
+	args := cmd.Args()
+	name := args.First()
+	if name == "" {
+		return fmt.Errorf("login-config requires a configuration name")
+	}
+	if cmd.Bool("clear") {
+		if err := client.ClearLoginConfig(name); err != nil {
+			return err
+		}
+		fmt.Printf("Cleared login config file for %q.\n", name)
+		return nil
+	}
+	if args.Len() != 2 {
+		return fmt.Errorf("login-config requires <configuration> <path> (or --clear)")
+	}
+	if err := client.SetLoginConfig(name, args.Get(1)); err != nil {
+		return err
+	}
+	fmt.Printf("Set login config file for %q.\n", name)
 	return nil
 }
 
@@ -106,7 +145,11 @@ func newClient() (*gcloud.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return gcloud.New(root, statePath), nil
+	kubeCachePath, err := env.KubeAuthCachePath()
+	if err != nil {
+		return nil, err
+	}
+	return gcloud.New(root, statePath, kubeCachePath), nil
 }
 
 func activate(ctx context.Context, client *gcloud.Client, name string) error {
@@ -114,6 +157,9 @@ func activate(ctx context.Context, client *gcloud.Client, name string) error {
 		return err
 	}
 	fmt.Printf("Switched to %q.\n", name)
+	if w := client.LoginConfigWarning(name); w != "" {
+		fmt.Fprintln(os.Stderr, w)
+	}
 	offerRelogin(client.VerifyAuth(ctx, name))
 	return nil
 }

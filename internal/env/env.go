@@ -21,6 +21,22 @@ func GcloudRoot() (string, error) {
 	return filepath.Join(home, ".config", "gcloud"), nil
 }
 
+// KubeAuthCachePath resolves the gke-gcloud-auth-plugin token cache:
+// $KUBECACHEDIR (falling back to ~/.kube)/gke_gcloud_auth_plugin_cache. The
+// plugin serves this cached token until expiry regardless of the active gcloud
+// account, so switching configurations must invalidate it.
+func KubeAuthCachePath() (string, error) {
+	dir := os.Getenv("KUBECACHEDIR")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home dir: %w", err)
+		}
+		dir = filepath.Join(home, ".kube")
+	}
+	return filepath.Join(dir, "gke_gcloud_auth_plugin_cache"), nil
+}
+
 // PreviousStatePath resolves gctx's state file recording the previously active
 // configuration: <$XDG_CONFIG_HOME|~/.config>/gcloud-switch/previous.
 func PreviousStatePath() (string, error) {
