@@ -30,8 +30,8 @@ gctx rename <old> <new> # rename a configuration
 gctx -h                 # help
 ```
 
-The no-arg picker marks the currently active configuration, and flags any whose
-credentials need a re-login with `(login required)`. Each item's preview shows
+The no-arg picker marks the currently active configuration, and flags any that
+need a login with `(login required)`. Each item's preview shows
 its account, project, region, and its `login_config_file` when set. Switching is
 global — it changes gcloud's active configuration for every shell, exactly like
 `gcloud config configurations activate`.
@@ -45,9 +45,19 @@ that require a browser re-login — it prints the exact login command and offers
 to run it:
 
 ```
-Credentials for "acme-prod" (principal://…) are expired.
-Re-login with: gcloud auth login --login-config=/path/to/login-config.json
-Re-login now? [y/N]
+gctx: credentials for "acme-prod" (principal://…) are expired.
+Log in with: gcloud auth login --login-config=/path/to/login-config.json
+Log in now? [y/N]
+```
+
+A configuration that has never been logged in gets the same offer. gcloud only
+writes `[core] account` after a successful login, so such a config has no
+account at all — it is recognised by its `[auth] login_config_file`:
+
+```
+gctx: configuration "acme-prod" has never been logged in.
+Log in with: gcloud auth login --login-config=/path/to/login-config.json
+Log in now? [y/N]
 ```
 
 The command uses the configuration's `[auth] login_config_file` when set. If

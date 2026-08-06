@@ -31,7 +31,8 @@ var errNoCredentials = errors.New("no stored credentials for account")
 
 // errNoAccount signals that a configuration has no account set, so there is
 // nothing to authenticate — distinct from an account whose credentials are
-// missing, and never a re-login state.
+// missing. gcloud only records an account after a successful login, so this is
+// a login state for configurations that carry a login config file.
 var errNoAccount = errors.New("no account configured")
 
 // ReloginPlan describes how to re-authenticate a configuration whose
@@ -43,6 +44,15 @@ type ReloginPlan struct {
 // Command returns the gcloud login command as it would be run.
 func (p *ReloginPlan) Command() string {
 	return strings.Join(loginCommand(p.Config), " ")
+}
+
+// Reason states why a login is needed. A configuration with no account has
+// never been logged in; one with an account has credentials that expired.
+func (p *ReloginPlan) Reason() string {
+	if p.Config.Account == "" {
+		return fmt.Sprintf("configuration %q has never been logged in", p.Config.Name)
+	}
+	return fmt.Sprintf("credentials for %q (%s) are expired", p.Config.Name, p.Config.Account)
 }
 
 // MissingLoginConfig returns the login_config_file path when the config points
@@ -89,23 +99,28 @@ func (c *Client) VerifyAuth(ctx context.Context, name string) *ReloginPlan {
 	}
 	ctx, cancel := context.WithTimeout(ctx, authCheckTimeout)
 	defer cancel()
-	if needsRelogin(c.checkAuth(ctx, cfg.Account)) {
+	if needsLogin(cfg, c.checkAuth(ctx, cfg.Account)) {
 		return &ReloginPlan{Config: cfg}
 	}
 	return nil
 }
 
-// needsRelogin reports whether a checkAuth error means the account must log in
-// again: its stored credentials are missing or can no longer produce a token.
-func needsRelogin(err error) bool {
+// needsLogin reports whether a checkAuth error means the configuration must log
+// in: its stored credentials are missing or can no longer produce a token, or
+// it carries a login config file but no account, meaning it has never been
+// logged in. A config with neither an account nor a login config file has
+// nothing to log in as.
+func needsLogin(cfg Config, err error) bool {
+	if errors.Is(err, errNoAccount) {
+		return cfg.LoginConfigFile != ""
+	}
 	return errors.Is(err, errNeedsReauth) || errors.Is(err, errNoCredentials)
 }
 
-// LoginRequired reports, per configuration (by position), whether its stored
-// credentials are missing or can no longer produce an access token — i.e. a
-// re-login is needed. Configurations without an account are never flagged.
-// Checks perform live token refreshes and run concurrently, bounded by
-// authCheckTimeout.
+// LoginRequired reports, per configuration (by position), whether it needs a
+// login: its stored credentials are missing or can no longer produce an access
+// token, or it has never been logged in. Checks perform live token refreshes
+// and run concurrently, bounded by authCheckTimeout.
 func (c *Client) LoginRequired(ctx context.Context, configs []Config) []bool {
 	ctx, cancel := context.WithTimeout(ctx, authCheckTimeout)
 	defer cancel()
@@ -114,10 +129,10 @@ func (c *Client) LoginRequired(ctx context.Context, configs []Config) []bool {
 	var wg sync.WaitGroup
 	for i, cfg := range configs {
 		wg.Add(1)
-		go func(i int, account string) {
+		go func(i int, cfg Config) {
 			defer wg.Done()
-			result[i] = needsRelogin(c.checkAuth(ctx, account))
-		}(i, cfg.Account)
+			result[i] = needsLogin(cfg, c.checkAuth(ctx, cfg.Account))
+		}(i, cfg)
 	}
 	wg.Wait()
 	return result

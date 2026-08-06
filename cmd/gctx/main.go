@@ -160,26 +160,26 @@ func activate(ctx context.Context, client *gcloud.Client, name string) error {
 	if w := client.LoginConfigWarning(name); w != "" {
 		fmt.Fprintln(os.Stderr, w)
 	}
-	offerRelogin(client.VerifyAuth(ctx, name))
+	offerLogin(client.VerifyAuth(ctx, name))
 	return nil
 }
 
-// offerRelogin warns about expired credentials and, on confirmation, runs the
+// offerLogin explains why a login is needed and, on confirmation, runs the
 // login command. It is a no-op when the plan is nil (credentials fine).
-func offerRelogin(plan *gcloud.ReloginPlan) {
+func offerLogin(plan *gcloud.ReloginPlan) {
 	if plan == nil {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "\nCredentials for %q (%s) are expired.\n", plan.Config.Name, plan.Config.Account)
+	fmt.Fprintf(os.Stderr, "\ngctx: %s.\n", plan.Reason())
 
 	if missing := plan.MissingLoginConfig(); missing != "" {
 		fmt.Fprintf(os.Stderr, "Its login config file is missing: %s\n", missing)
-		fmt.Fprintf(os.Stderr, "Point the config at a valid login config, then re-login:\n  %s\n", plan.FixLoginConfigCommand())
+		fmt.Fprintf(os.Stderr, "Point the config at a valid login config, then log in:\n  %s\n", plan.FixLoginConfigCommand())
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "Re-login with: %s\n", plan.Command())
-	if !confirm("Re-login now?") {
+	fmt.Fprintf(os.Stderr, "Log in with: %s\n", plan.Command())
+	if !confirm("Log in now?") {
 		return
 	}
 	if err := plan.Run(); err != nil {
