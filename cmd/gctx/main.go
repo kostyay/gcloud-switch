@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/kostyay/gcloud-switch/internal/env"
+	"github.com/kostyay/gcloud-switch/internal/fuzzyfinder"
 	"github.com/kostyay/gcloud-switch/internal/gcloud"
-	"github.com/ktr0731/go-fuzzyfinder"
 	"github.com/urfave/cli/v3"
 )
 
@@ -189,38 +189,71 @@ func offerLogin(plan *gcloud.ReloginPlan) {
 
 // pick runs the interactive fuzzy picker over all configurations.
 func pick(ctx context.Context, client *gcloud.Client) error {
-	configs, err := client.List()
-	if err != nil {
-		return err
-	}
-	current, err := client.Current()
-	if err != nil {
-		return err
-	}
+	for {
+		configs, err := client.List()
+		if err != nil {
+			return err
+		}
+		current, err := client.Current()
+		if err != nil {
+			return err
+		}
 
-	if len(configs) == 1 {
-		fmt.Printf("only one configuration: %s (active)\n", configs[0].Name)
-		return nil
-	}
-
-	needsLogin := client.LoginRequired(ctx, configs)
-	idx, err := fuzzyfinder.Find(
-		configs,
-		func(i int) string { return itemLabel(configs[i], current, needsLogin[i]) },
-		fuzzyfinder.WithPreviewWindow(func(i, _, _ int) string {
-			if i < 0 {
-				return ""
-			}
-			return preview(configs[i])
-		}),
-	)
-	if err != nil {
-		if errors.Is(err, fuzzyfinder.ErrAbort) {
+		if len(configs) == 1 {
+			fmt.Printf("only one configuration: %s (active)\n", configs[0].Name)
 			return nil
 		}
-		return fmt.Errorf("select configuration: %w", err)
+
+		needsLogin := client.LoginRequired(ctx, configs)
+		idx, err := fuzzyfinder.Find(
+			configs,
+			func(i int) string { return itemLabel(configs[i], current, needsLogin[i]) },
+			fuzzyfinder.WithHeader("[enter] switch  [r] re-login  [esc] cancel"),
+			fuzzyfinder.WithHotkey('r'),
+			fuzzyfinder.WithPreviewWindow(func(i, _, _ int) string {
+				if i < 0 {
+					return ""
+				}
+				return preview(configs[i])
+			}),
+		)
+		if errors.Is(err, fuzzyfinder.ErrHotkey) {
+			reopen, err := relogin(client, configs[idx].Name)
+			if err != nil {
+				return err
+			}
+			if !reopen {
+				return nil
+			}
+			continue
+		}
+		if err != nil {
+			if errors.Is(err, fuzzyfinder.ErrAbort) {
+				return nil
+			}
+			return fmt.Errorf("select configuration: %w", err)
+		}
+		return activate(ctx, client, configs[idx].Name)
 	}
-	return activate(ctx, client, configs[idx].Name)
+}
+
+// relogin runs an explicitly requested login for the highlighted configuration.
+// It reports whether the picker should reopen afterward.
+func relogin(client *gcloud.Client, name string) (bool, error) {
+	plan, err := client.LoginPlan(name)
+	if err != nil {
+		return false, err
+	}
+	if missing := plan.MissingLoginConfig(); missing != "" {
+		fmt.Fprintf(os.Stderr, "gctx: login config file is missing: %s\n", missing)
+		fmt.Fprintf(os.Stderr, "Point the config at a valid login config, then try again:\n  %s\n", plan.FixLoginConfigCommand())
+		return false, nil
+	}
+	fmt.Fprintf(os.Stderr, "Logging in with: %s\n", plan.Command())
+	if err := plan.Run(); err != nil {
+		return false, fmt.Errorf("login to %q: %w", name, err)
+	}
+	return true, nil
 }
 
 func itemLabel(c gcloud.Config, current string, needsLogin bool) string {

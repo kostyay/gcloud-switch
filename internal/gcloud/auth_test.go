@@ -100,6 +100,19 @@ func TestVerifyAuthNeverLoggedIn(t *testing.T) {
 	}
 }
 
+func TestLoginPlanDoesNotRequireExpiredCredentials(t *testing.T) {
+	c := newTestClient(t)
+	seedConfig(t, c, "personal", "me@example.com", "my-project", "us-central1")
+
+	plan, err := c.LoginPlan("personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := plan.Command(), "gcloud auth login me@example.com"; got != want {
+		t.Fatalf("Command() = %q, want %q", got, want)
+	}
+}
+
 func TestReloginPlanReason(t *testing.T) {
 	tests := []struct {
 		name string

@@ -30,6 +30,10 @@ gctx rename <old> <new> # rename a configuration
 gctx -h                 # help
 ```
 
+In the interactive picker, press `Enter` to switch to the highlighted
+configuration, `r` to re-login to it, or `Esc` to cancel. These shortcuts are
+shown in the picker footer.
+
 The no-arg picker marks the currently active configuration, and flags any that
 need a login with `(login required)`. Each item's preview shows
 its account, project, region, and its `login_config_file` when set. Switching is

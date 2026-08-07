@@ -105,6 +105,16 @@ func (c *Client) VerifyAuth(ctx context.Context, name string) *ReloginPlan {
 	return nil
 }
 
+// LoginPlan returns the interactive login command for a configuration without
+// first checking whether its current credentials are valid.
+func (c *Client) LoginPlan(name string) (*ReloginPlan, error) {
+	cfg, err := c.parseConfig(name)
+	if err != nil {
+		return nil, err
+	}
+	return &ReloginPlan{Config: cfg}, nil
+}
+
 // needsLogin reports whether a checkAuth error means the configuration must log
 // in: its stored credentials are missing or can no longer produce a token, or
 // it carries a login config file but no account, meaning it has never been
