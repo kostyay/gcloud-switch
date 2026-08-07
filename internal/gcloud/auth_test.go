@@ -62,6 +62,7 @@ func TestLoginRequired(t *testing.T) {
 	configs := []Config{
 		{Name: "no-account"},
 		{Name: "missing-creds", Account: "me@example.com"},
+		{Name: "never-logged-in", LoginConfigFile: "/tmp/login.json"},
 	}
 
 	got := c.LoginRequired(t.Context(), configs)
@@ -71,6 +72,72 @@ func TestLoginRequired(t *testing.T) {
 	}
 	if !got[1] {
 		t.Fatal("config with missing credentials should be flagged")
+	}
+	if !got[2] {
+		t.Fatal("login-config config that has never been logged in should be flagged")
+	}
+}
+
+func TestVerifyAuthNeverLoggedIn(t *testing.T) {
+	c := newTestClient(t)
+	loginConfig := filepath.Join(t.TempDir(), "login.json")
+	if err := os.WriteFile(loginConfig, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seedConfig(t, c, "prod", "", "p-prod", "us-central1")
+	if err := c.SetLoginConfig("prod", loginConfig); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := c.VerifyAuth(t.Context(), "prod")
+
+	if plan == nil {
+		t.Fatal("want a login plan for a config that has never been logged in")
+	}
+	want := "gcloud auth login --login-config=" + loginConfig
+	if got := plan.Command(); got != want {
+		t.Fatalf("Command() = %q, want %q", got, want)
+	}
+}
+
+func TestLoginPlanDoesNotRequireExpiredCredentials(t *testing.T) {
+	c := newTestClient(t)
+	seedConfig(t, c, "personal", "me@example.com", "my-project", "us-central1")
+
+	plan, err := c.LoginPlan("personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := plan.Command(), "gcloud auth login me@example.com"; got != want {
+		t.Fatalf("Command() = %q, want %q", got, want)
+	}
+}
+
+func TestReloginPlanReason(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{
+			name: "expired credentials name the account",
+			cfg:  Config{Name: "staging", Account: "me@example.com"},
+			want: `credentials for "staging" (me@example.com) are expired`,
+		},
+		{
+			name: "config without an account has never been logged in",
+			cfg:  Config{Name: "prod", LoginConfigFile: "/tmp/login.json"},
+			want: `configuration "prod" has never been logged in`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := &ReloginPlan{Config: tc.cfg}
+			if got := plan.Reason(); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
