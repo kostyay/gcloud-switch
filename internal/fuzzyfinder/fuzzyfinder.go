@@ -48,6 +48,7 @@ type state struct {
 	items      []string           // All item names.
 	allMatched []matching.Matched // All items.
 	matched    []matching.Matched // Matched items against the input.
+	preview    bool
 
 	// x is the current index of the prompt line.
 	x int
@@ -197,7 +198,7 @@ func (f *finder) _draw() {
 	f.term.Clear()
 
 	maxWidth := width
-	if f.opt.previewFunc != nil {
+	if f.opt.previewFunc != nil && f.state.preview {
 		maxWidth = width/2 - 1
 	}
 
@@ -333,7 +334,7 @@ func (f *finder) _draw() {
 }
 
 func (f *finder) _drawPreview() {
-	if f.opt.previewFunc == nil {
+	if f.opt.previewFunc == nil || !f.state.preview {
 		return
 	}
 
@@ -534,6 +535,10 @@ func (f *finder) readKey(ctx context.Context) error {
 
 	switch e := e.(type) {
 	case *tcell.EventKey:
+		if f.opt.previewFunc != nil && e.Rune() == 'i' {
+			f.state.preview = !f.state.preview
+			return nil
+		}
 		if f.opt.hotkey != 0 && e.Rune() == f.opt.hotkey {
 			return ErrHotkey
 		}

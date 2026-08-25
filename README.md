@@ -31,11 +31,11 @@ gctx -h                 # help
 ```
 
 In the interactive picker, press `Enter` to switch to the highlighted
-configuration, `r` to re-login to it, or `Esc` to cancel. These shortcuts are
-shown in the picker footer.
+configuration, `i` to show or hide its details, `r` to re-login to it, or `Esc`
+to cancel. These shortcuts are shown in the picker footer.
 
 The no-arg picker marks the currently active configuration, and flags any that
-need a login with `(login required)`. Each item's preview shows
+need a login with `(login required)`. Press `i` to show an item's preview with
 its account, project, region, and its `login_config_file` when set. Switching is
 global — it changes gcloud's active configuration for every shell, exactly like
 `gcloud config configurations activate`.
