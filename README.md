@@ -51,7 +51,7 @@ to run it:
 ```
 gctx: credentials for "acme-prod" (principal://…) are expired.
 Log in with: gcloud auth login --login-config=/path/to/login-config.json
-Log in now? [y/N]
+Log in now? [Y/n]
 ```
 
 A configuration that has never been logged in gets the same offer. gcloud only
@@ -61,7 +61,7 @@ account at all — it is recognised by its `[auth] login_config_file`:
 ```
 gctx: configuration "acme-prod" has never been logged in.
 Log in with: gcloud auth login --login-config=/path/to/login-config.json
-Log in now? [y/N]
+Log in now? [Y/n]
 ```
 
 The command uses the configuration's `[auth] login_config_file` when set. If

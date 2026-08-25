@@ -284,15 +284,15 @@ func orDash(s string) string {
 }
 
 // confirm asks a yes/no question on stderr and reads the answer from stdin.
-// The default (empty input) is no.
+// The default (empty input) is yes.
 func confirm(prompt string) bool {
-	fmt.Fprintf(os.Stderr, "%s [y/N] ", prompt)
+	fmt.Fprintf(os.Stderr, "%s [Y/n] ", prompt)
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
 		return false
 	}
 	answer := strings.ToLower(strings.TrimSpace(line))
-	return answer == "y" || answer == "yes"
+	return answer == "" || answer == "y" || answer == "yes"
 }
 
 // versionString is stamped by goreleaser via -ldflags "-X main.versionString=...".
