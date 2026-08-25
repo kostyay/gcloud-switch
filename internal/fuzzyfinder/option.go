@@ -50,7 +50,7 @@ func WithMode(m mode) Option {
 	}
 }
 
-// WithPreviewWindow enables to display a preview for the selected item.
+// WithPreviewWindow adds a preview for the selected item. Press i to show or hide it.
 // The argument f receives i, width and height. i is the same as Find's one.
 // width and height are the size of the terminal so that you can use these to adjust
 // a preview content. Note that width and height are calculated as a rune-based length.

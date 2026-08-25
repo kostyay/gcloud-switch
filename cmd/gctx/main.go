@@ -208,7 +208,7 @@ func pick(ctx context.Context, client *gcloud.Client) error {
 		idx, err := fuzzyfinder.Find(
 			configs,
 			func(i int) string { return itemLabel(configs[i], current, needsLogin[i]) },
-			fuzzyfinder.WithHeader("[enter] switch  [r] re-login  [esc] cancel"),
+			fuzzyfinder.WithHeader("[enter] switch  [i] info  [r] re-login  [esc] cancel"),
 			fuzzyfinder.WithHotkey('r'),
 			fuzzyfinder.WithPreviewWindow(func(i, _, _ int) string {
 				if i < 0 {
